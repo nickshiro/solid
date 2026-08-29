@@ -110,7 +110,11 @@ describe("pay-for-use tree-shaking (#2883)", () => {
     // same-channel coalescing (a record emitting in BOTH merged
     // transactions applies ONCE at commit, next resolved live). Merge
     // machinery is core-retained by necessity. Measured at 21,393.
-    expect(minifiedBytes).toBeLessThan(21_500);
+    //
+    // Re-audit 9 (2026-08-29): forced-entry dedup + qf stamp retargeting in
+    // the same merge path (~140 B, core-retained for the same reason).
+    // Measured at 21,533.
+    expect(minifiedBytes).toBeLessThan(21_650);
   });
 
   it("plain stores shed the verdict layer, affects, boundaries, and map", async () => {
