@@ -114,12 +114,12 @@ function installNextBlockedHalf(): void {
         const overlaid = t?.fam?.overlaid as Set<StoreNextTarget> | undefined;
         if (overlaid !== undefined) {
           for (const ot of overlaid) {
-            if (ot.pc !== null && ot.pc.p !== null) patchHooks!.emitPatchOptimistic(ot, null, null);
-            // Ancestor re-delivery (node port): compiled bodies READ INTO
-            // reverted children through nested chains — the revert must
-            // reach them (the overlaid set enumerates overridden targets
-            // only; the old design's settle-held twins covered this).
-            if (patchHooks !== null) patchHooks.emitPatchAncestorsOptimistic(ot, null);
+            // ONE emission (round 10.5, F7): the primitive self-gates on
+            // consumers/machinery and bubbles ancestors internally —
+            // compiled bodies reading INTO reverted children through
+            // nested chains are reached without a second (duplicating)
+            // ancestor call on the undeduped lane path.
+            if (patchHooks !== null) patchHooks.emitPatchOptimistic(ot, null, null);
             // Row-ops resync (family increment 2): reverts flip node values
             // back engine-natively; a driven list must rebuild retention by
             // row identity against the post-revert view (resolved from the
@@ -667,9 +667,9 @@ export function consumeOverridesNext(fam: StoreNextFamily, replacing: boolean): 
       }
       // Patch channel (override-consumption site): visible truth flipped to
       // committed for the consumed keys — force a re-apply from the live
-      // view so the DOM leaves the override state.
-      if (t.pc !== null && t.pc.p !== null) patchHooks!.emitPatchOptimistic(t, null, null);
-      if (patchHooks !== null) patchHooks.emitPatchAncestorsOptimistic(t, null);
+      // view so the DOM leaves the override state. ONE emission (round
+      // 10.5, F7): the primitive self-gates and bubbles.
+      if (patchHooks !== null) patchHooks.emitPatchOptimistic(t, null, null);
     }
     contradicted.clear();
   });
