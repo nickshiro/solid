@@ -117,8 +117,8 @@ function installNextBlockedHalf(): void {
             // ONE emission (round 10.5, F7): the primitive self-gates on
             // consumers/machinery and bubbles ancestors internally —
             // compiled bodies reading INTO reverted children through
-            // nested chains are reached without a second (duplicating)
-            // ancestor call on the undeduped lane path.
+            // nested chains are reached without a duplicating ancestor
+            // call on the undeduped lane path.
             if (patchHooks !== null) patchHooks.emitPatchOptimistic(ot, null, null);
             // Row-ops resync (family increment 2): reverts flip node values
             // back engine-natively; a driven list must rebuild retention by
@@ -543,8 +543,9 @@ function wipeStructuralOverrides(t: StoreNextTarget): void {
   }
   // Patch channel (override-consumption site): visible truth flipped to
   // committed for the consumed keys — force a re-apply from the live
-  // view so the DOM leaves the override state.
-  if (t.pc !== null && t.pc.p !== null) patchHooks!.emitPatchOptimistic(t, null, null);
+  // view so the DOM leaves the override state. ONE emission (round 10.5,
+  // F7): the primitive self-gates and bubbles.
+  if (patchHooks !== null) patchHooks.emitPatchOptimistic(t, null, null);
 }
 
 /** Settle-time re-derivation (#3123 re-ruling, the second reckoning point):
@@ -603,73 +604,10 @@ export function consumeOverridesNext(fam: StoreNextFamily, replacing: boolean): 
   let consumed = false;
   runAuthoritative(() => {
     for (const t of overlaid as Set<StoreNextTarget>) {
-      const drop = (node: Signal<any>, committed: any) => {
-        if (!hasActiveOverride(node)) return;
-        const prev = unwrapOverride(node._x?._overrideValue);
-        // Full legacy reset (clearOptimisticOverride parity): the landing is
-        // authoritative NOW — fold committed into the node directly instead
-        // of riding a transaction's commit (whose queues may be stashed with
-        // the transaction parked; the wake would strand until it settles).
-        ext(node)._overrideValue = NOT_PENDING;
-        node._config |= CONFIG_OPTIMISTIC;
-        const nx = (node as any)._x;
-        if (nx) {
-          nx._overrideOwner = null;
-          nx._optimisticLane = undefined;
-        }
-        node._pendingValue = NOT_PENDING;
-        node._value = committed;
-        if (!node._equals || !node._equals(prev, committed)) {
-          insertSubs(node, true);
-          schedule();
-        }
-      };
-      // Landing consumes STRUCTURAL optimism only (legacy layer parity):
-      // membership edits, array length, and the value overrides written WITH
-      // them (a key carrying an active presence override is an add/delete —
-      // classified BEFORE the adoption may have made the key exist in landed
-      // data). A pure value override on a key the landing carries stays with
-      // its owning transaction (rapid-toggle contract: a live action's edit
-      // of an existing entity rides on top of landed truth).
-      const isArr = Array.isArray(t.v);
-      const has = t.h;
-      let structuralKeys: Set<PropertyKey> | null = null;
-      if (has !== null) {
-        for (const key of Reflect.ownKeys(has)) {
-          if (hasActiveOverride(has[key as any])) (structuralKeys ??= new Set()).add(key);
-        }
-      }
-      const nodes = t.n;
-      if (nodes !== null) {
-        for (const key of Reflect.ownKeys(nodes)) {
-          const structural =
-            structuralKeys?.has(key) || !(key in t.v) || (isArr && key === "length");
-          if (!structural) continue;
-          drop(
-            nodes[key as any],
-            isArr && key === "length" ? (t.v as any[]).length : t.v[key as any]
-          );
-        }
-      }
-      if (has !== null) {
-        for (const key of Reflect.ownKeys(has)) drop(has[key as any], key in t.v);
-      }
-      if (t.k !== null && hasActiveOverride(t.k)) {
-        ext(t.k)._overrideValue = NOT_PENDING;
-        t.k._config |= CONFIG_OPTIMISTIC;
-        const kx = (t.k as any)._x;
-        if (kx) {
-          kx._overrideOwner = null;
-          kx._optimisticLane = undefined;
-        }
-        insertSubs(t.k, true);
-        schedule();
-      }
-      // Patch channel (override-consumption site): visible truth flipped to
-      // committed for the consumed keys — force a re-apply from the live
-      // view so the DOM leaves the override state. ONE emission (round
-      // 10.5, F7): the primitive self-gates and bubbles.
-      if (patchHooks !== null) patchHooks.emitPatchOptimistic(t, null, null);
+      if (!contradicted.has(t)) continue;
+      consumed = true;
+      overlaid.delete(t);
+      wipeStructuralOverrides(t);
     }
     contradicted.clear();
   });
