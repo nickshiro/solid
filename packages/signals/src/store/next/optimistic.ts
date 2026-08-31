@@ -482,8 +482,11 @@ function _markLandingContradiction(
  * the adoption may have made the key exist in landed data). A pure value
  * override on a key the landing carries stays with its owning transaction
  * (rapid-toggle contract: a live action's edit of an existing entity rides
- * on top of landed truth). Callers hold the authoritative posture. */
-function wipeStructuralOverrides(t: StoreNextTarget): void {
+ * on top of landed truth). Callers hold the authoritative posture.
+ * `landing` selects the patch-channel posture: a LANDING consumption emits
+ * authoritatively (see the tail), a settle-drain wipe keeps the lane form
+ * (the drain's own resync loop covers structure there). */
+function wipeStructuralOverrides(t: StoreNextTarget, landing = false): void {
   const drop = (node: Signal<any>, committed: any) => {
     if (!hasActiveOverride(node)) return;
     const prev = unwrapOverride(node._x?._overrideValue);
@@ -545,7 +548,19 @@ function wipeStructuralOverrides(t: StoreNextTarget): void {
   // committed for the consumed keys — force a re-apply from the live
   // view so the DOM leaves the override state. ONE emission (round 10.5,
   // F7): the primitive self-gates and bubbles.
-  if (patchHooks !== null) patchHooks.emitPatchOptimistic(t, null, null);
+  if (landing) {
+    // AUTHORITATIVE consumption (#3123 P1, contradicting-landing
+    // notification): the landing's commit is regular-queue truth — the
+    // value bump rides the SAME schedule as the classic reversion effects
+    // above (and coalesces with the adoption's own emission into one
+    // delivery), never the lane. And the driven list is told AT THE
+    // LANDING via the resync form: its held optimistic ops are baseline-
+    // relative and this consumption just changed the baseline under them
+    // (the settle drain's resync loop can't reach it — consumption removes
+    // the target from `overlaid` before that loop reads it).
+    if (patchHooks !== null) patchHooks.emitPatch(t, t.v, null);
+    if (t.pc !== null && (t.pc as any).ro !== null) rowHooks!.emitRowOpsOptimistic(t, null, null);
+  } else if (patchHooks !== null) patchHooks.emitPatchOptimistic(t, null, null);
 }
 
 /** Settle-time re-derivation (#3123 re-ruling, the second reckoning point):
@@ -607,7 +622,7 @@ export function consumeOverridesNext(fam: StoreNextFamily, replacing: boolean): 
       if (!contradicted.has(t)) continue;
       consumed = true;
       overlaid.delete(t);
-      wipeStructuralOverrides(t);
+      wipeStructuralOverrides(t, true);
     }
     contradicted.clear();
   });
