@@ -388,7 +388,11 @@ export function notifyOptimisticWrites(t: StoreNextTarget, pb: Record<PropertyKe
   // rides node overrides — it never enters the reconcile walk — so a driven
   // list must get its structural ops here, lane-timed. Identity diff of the
   // pre-write optimistic view against the draft; aligned writes emit nothing.
-  if (t.pc !== null && t.pc.ro !== null && Array.isArray(pb)) {
+  // NOT during replay (#3123): re-execution is one reckoning, not a write
+  // sequence — per-edit frames expose intermediate drafts classic readers
+  // never see (they pull post-replay at flush). The reckoning's caller
+  // emits ONE composed frame at the end (emitLandingConsumption).
+  if (!replaying && t.pc !== null && t.pc.ro !== null && Array.isArray(pb)) {
     const prevView = optimisticView(t, old);
     if (Array.isArray(prevView)) {
       const ops = buildIdentityRowOps(prevView, pb);
@@ -549,18 +553,36 @@ function wipeStructuralOverrides(t: StoreNextTarget, landing = false): void {
   // view so the DOM leaves the override state. ONE emission (round 10.5,
   // F7): the primitive self-gates and bubbles.
   if (landing) {
-    // AUTHORITATIVE consumption (#3123 P1, contradicting-landing
-    // notification): the landing's commit is regular-queue truth — the
-    // value bump rides the SAME schedule as the classic reversion effects
-    // above (and coalesces with the adoption's own emission into one
-    // delivery), never the lane. And the driven list is told AT THE
-    // LANDING via the resync form: its held optimistic ops are baseline-
-    // relative and this consumption just changed the baseline under them
-    // (the settle drain's resync loop can't reach it — consumption removes
-    // the target from `overlaid` before that loop reads it).
-    if (patchHooks !== null) patchHooks.emitPatch(t, t.v, null);
-    if (t.pc !== null && (t.pc as any).ro !== null) rowHooks!.emitRowOpsOptimistic(t, null, null);
+    // AUTHORITATIVE consumption: the caller (consumeOverridesNext) emits
+    // via emitLandingConsumption AFTER the reckoning's replay half — an
+    // emission here would snapshot the bare landed base between wipe and
+    // replay, flashing a driven list through a half-state classic readers
+    // never see (they pull post-replay at flush).
   } else if (patchHooks !== null) patchHooks.emitPatchOptimistic(t, null, null);
+}
+
+/** Channel notification for a landing consumption (#3123 P1, contradicting-
+ * landing notification): the landing's commit is regular-queue truth — the
+ * value bump rides the SAME schedule as the classic reversion effects (and
+ * coalesces with the adoption's own emission into one delivery), never the
+ * lane. And the driven list is told AT THE LANDING via the resync form: its
+ * held optimistic ops are baseline-relative and this consumption just
+ * changed the baseline under them (the settle drain's resync loop can't
+ * reach it — consumption removes the target from `overlaid` before that
+ * loop reads it). Called after replay so the emission's row snapshot is the
+ * RE-DERIVED view — in a continuation the wipe is only half the reckoning.
+ * The snapshot is composed HERE (optimisticView over the landed backing),
+ * not resolved at drain: the target-resolved resync form reads `pb ?? v`,
+ * which is the bare landed base — correct for the settle-drain revert site
+ * it serves (overrides are gone there) but a half-state here (replay just
+ * re-armed them). */
+function emitLandingConsumption(t: StoreNextTarget): void {
+  if (patchHooks !== null) patchHooks.emitPatch(t, t.v, null);
+  if (t.pc !== null && (t.pc as any).ro !== null) {
+    const rows = optimisticView(t, (t.pb ?? t.v) as any);
+    if (Array.isArray(rows)) rowHooks!.emitRowOpsOptimistic(t, rows, null);
+    else rowHooks!.emitRowOpsOptimistic(t, null, null);
+  }
 }
 
 /** Settle-time re-derivation (#3123 re-ruling, the second reckoning point):
@@ -616,17 +638,17 @@ export function consumeOverridesNext(fam: StoreNextFamily, replacing: boolean): 
     contradicted.clear();
     return;
   }
-  let consumed = false;
+  let wiped: StoreNextTarget[] | null = null;
   runAuthoritative(() => {
     for (const t of overlaid as Set<StoreNextTarget>) {
       if (!contradicted.has(t)) continue;
-      consumed = true;
+      (wiped ??= []).push(t);
       overlaid.delete(t);
       wipeStructuralOverrides(t, true);
     }
     contradicted.clear();
   });
-  if (!consumed) return;
+  if (wiped === null) return;
   // The reckoning's second half (#3123 re-ruling, flight-gated). A REPLACING
   // landing — the invocation's first commit: the derive re-asked its
   // question from scratch (navigation, refresh, poll) — is a complete
@@ -643,6 +665,13 @@ export function consumeOverridesNext(fam: StoreNextFamily, replacing: boolean): 
   } else {
     replayRetainedEdits(fam);
   }
+  // Channel notification only after BOTH halves — the wipe alone is a
+  // half-state in a continuation (the row snapshot must be the re-derived
+  // view, not the bare landed base). Authoritative posture: these are the
+  // landing's own deliveries.
+  runAuthoritative(() => {
+    for (const t of wiped!) emitLandingConsumption(t);
+  });
 }
 
 /** Optimistic-view composition for snapshot/deep (O1: snapshot is the CURRENT
