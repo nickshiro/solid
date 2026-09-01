@@ -577,6 +577,11 @@ function wipeStructuralOverrides(t: StoreNextTarget, landing = false): void {
  * it serves (overrides are gone there) but a half-state here (replay just
  * re-armed them). */
 function emitLandingConsumption(t: StoreNextTarget): void {
+  // SUPERSEDE queued structural work (structural audit, F4): items stamped
+  // before this bump — transition-held ops from the pre-landing baseline,
+  // any interim frames — describe arrangements the consumption invalidated;
+  // the drains skip them, and THIS emission (stamped fresh) is the truth.
+  if (t.pc !== null) (t.pc as any).sg = (((t.pc as any).sg as number) | 0) + 1;
   if (patchHooks !== null) patchHooks.emitPatch(t, t.v, null);
   if (t.pc !== null && (t.pc as any).ro !== null) {
     const rows = optimisticView(t, (t.pb ?? t.v) as any);
