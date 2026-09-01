@@ -577,17 +577,16 @@ function wipeStructuralOverrides(t: StoreNextTarget, landing = false): void {
  * it serves (overrides are gone there) but a half-state here (replay just
  * re-armed them). */
 function emitLandingConsumption(t: StoreNextTarget): void {
-  // SUPERSEDE queued structural work (structural audit, F4): items stamped
-  // before this bump — transition-held ops from the pre-landing baseline,
-  // any interim frames — describe arrangements the consumption invalidated;
-  // the drains skip them, and THIS emission (stamped fresh) is the truth.
-  if (t.pc !== null) (t.pc as any).sg = (((t.pc as any).sg as number) | 0) + 1;
+  // Value channel: regular bump — held-write semantics give it the landing
+  // transition's own visibility (coalesces with the adoption's emission).
   if (patchHooks !== null) patchHooks.emitPatch(t, t.v, null);
-  if (t.pc !== null && (t.pc as any).ro !== null) {
-    const rows = optimisticView(t, (t.pb ?? t.v) as any);
-    if (Array.isArray(rows)) rowHooks!.emitRowOpsOptimistic(t, rows, null);
-    else rowHooks!.emitRowOpsOptimistic(t, null, null);
-  }
+  // Structural channel (audit follow-up P1, back-to-back continuations):
+  // lane-timed but DRAIN-RESOLVED — never an emission-time composed
+  // snapshot: a mid-reckoning draft state (parked or superseded landing)
+  // must not reach the DOM before classic readers can render it. The hook
+  // also bumps the structural generation, superseding queued
+  // pre-consumption row/slot work (F4).
+  if (rowHooks !== null) rowHooks.emitRowOpsLanding(t);
 }
 
 /** Settle-time re-derivation (#3123 re-ruling, the second reckoning point):
