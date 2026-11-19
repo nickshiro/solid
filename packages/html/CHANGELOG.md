@@ -1,5 +1,15 @@
 # @solidjs/html
 
+## 2.0.2
+
+### Patch Changes
+
+- eca83db: Keep nested template renders from interrupting traversal of the outer template.
+- 4805dea: Let nested component children override an explicit children prop, including function-valued props.
+- 41b4b7e: Preserve whitespace-only content and normalize an initial newline in pre and textarea elements.
+- bab8a53: Preserve character references literally in HTML script and style raw text.
+  - @solidjs/web@2.0.4
+
 ## 2.0.1
 
 ### Patch Changes
